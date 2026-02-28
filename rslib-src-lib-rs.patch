@@ -1,0 +1,14 @@
+diff --git a/rslib/src/lib.rs b/rslib/src/lib.rs
+index 2258c3592..5b1524c0c 100644
+--- a/rslib/src/lib.rs
++++ b/rslib/src/lib.rs
+@@ -50,7 +50,8 @@ mod typeanswer;
+ pub mod types;
+ pub mod undo;
+ pub mod version;
+-
++#[path = "../../../ffi.rs"]
++pub mod ffi;
+ use std::env;
+ use std::sync::LazyLock;
+ 

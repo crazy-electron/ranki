@@ -1,0 +1,13 @@
+diff --git a/rslib/Cargo.toml b/rslib/Cargo.toml
+index 9be9e8d87..4d067275b 100644
+--- a/rslib/Cargo.toml
++++ b/rslib/Cargo.toml
+@@ -83,7 +83,7 @@ pulldown-cmark.workspace = true
+ rand.workspace = true
+ rayon.workspace = true
+ regex.workspace = true
+-reqwest.workspace = true
++reqwest = { workspace = true, features = ["native-tls"] }
+ rusqlite.workspace = true
+ rustls-pemfile.workspace = true
+ scopeguard.workspace = true

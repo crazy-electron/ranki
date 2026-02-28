@@ -1,3 +1,6 @@
 [submodule "anki"]
 	path = anki
 	url = https://github.com/ankitects/anki
+[submodule "protobuf-vala"]
+	path = protobuf-vala
+	url = https://github.com/crazy-electron/protobuf-vala
