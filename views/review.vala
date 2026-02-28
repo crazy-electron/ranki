@@ -40,15 +40,7 @@ public class ReviewView : AppView {
                             <property name="expand">False</property>
                         </packing>
                         </child>
-
-                        <child>
-                        <object class="InkButton" id="rebuild_button">
-                            <property name="label">Rebuild deck</property>                            
-                        </object>
-                        <packing>
-                            <property name="expand">False</property>
-                        </packing>
-                        </child>
+                        
                     </object>
                     <packing>
                         <property name="expand">False</property>
