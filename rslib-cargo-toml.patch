@@ -7,7 +7,7 @@ index 9be9e8d87..4d067275b 100644
  rayon.workspace = true
  regex.workspace = true
 -reqwest.workspace = true
-+reqwest = { workspace = true, features = ["native-tls"] }
++reqwest = { workspace = true, features = ["rustls-tls"] }
  rusqlite.workspace = true
  rustls-pemfile.workspace = true
  scopeguard.workspace = true
