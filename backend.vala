@@ -6,38 +6,47 @@ public errordomain BackendError {
 
 public class Backend : GLib.Object {
 
+    [SimpleType]
+    public struct AnkiBytes {
+        uint8* ptr;
+        size_t len;
+    }
+
+    [SimpleType]
+    public struct AnkiResult {
+        uint8 ok;
+        AnkiBytes data;
+        AnkiBytes err;
+    }
+
     // Free a buffer returned by the FFI.
-    //  [CCode (cname = "anki_bytes_free", has_type_id = false)]
-    //  private extern static void anki_bytes_free (AnkiBytes bytes);
+    [CCode (cname = "anki_bytes_free", has_type_id = false)]
+    private extern static void anki_bytes_free (AnkiBytes bytes);
  
     // Open a backend with a serialized BackendInit protobuf.
     // Returns NULL on error; if err_out != NULL it will be set to a UTF-8 message.
-    //  [CCode (cname = "anki_backend_open", has_type_id = false)]
-    //  private extern static uint8* anki_backend_open (uint8* init_ptr, size_t init_len, ref AnkiBytes err_out);
+    [CCode (cname = "anki_backend_open", has_type_id = false)]
+    private extern static uint8* anki_backend_open (uint8* init_ptr, size_t init_len, ref AnkiBytes err_out);
 
     // Free a backend handle.
-    //  [CCode (cname = "anki_backend_free", has_type_id = false)]
-    //  private extern static void anki_backend_free (uint8* backend);
+    [CCode (cname = "anki_backend_free", has_type_id = false)]
+    private extern static void anki_backend_free (uint8* backend);
  
     // Run a backend service method.
-    //  [CCode (cname = "anki_backend_command", has_type_id = false)]
-    //  private extern static AnkiResult anki_backend_command (uint8* backend, uint32 service, uint32 method, uint8* input_ptr, size_t input_len);
+    [CCode (cname = "anki_backend_command", has_type_id = false)]
+    private extern static AnkiResult anki_backend_command (uint8* backend, uint32 service, uint32 method, uint8* input_ptr, size_t input_len);
 
     // Convenience wrapper to open a collection without protobuf on the C side.
-    //  [CCode (cname = "anki_backend_open_collection", has_type_id = false)]
-    //  private extern static AnkiResult anki_backend_open_collection (uint8* backend, string collection_path, string media_folder_path, string media_db_path);
+    [CCode (cname = "anki_backend_open_collection", has_type_id = false)]
+    private extern static AnkiResult anki_backend_open_collection (uint8* backend, string collection_path, string media_folder_path, string media_db_path);
 
     // Convenience wrapper to close the collection.
-    //  [CCode (cname = "anki_backend_close_collection", has_type_id = false)]
-    //  private extern static AnkiResult anki_backend_close_collection (uint8* backend, uint8 downgrade_to_schema11);
+    [CCode (cname = "anki_backend_close_collection", has_type_id = false)]
+    private extern static AnkiResult anki_backend_close_collection (uint8* backend, uint8 downgrade_to_schema11 = 0);
 
     private uint8* backend;
 
-    private Bridge bridge;
-
-    public Backend(string so_path) throws BackendError {
-
-        bridge = new Bridge( so_path );
+    public Backend() throws BackendError {
 
         var init = new Anki.Backend.BackendInit() {
             locale_folder_path = "",
@@ -48,11 +57,11 @@ public class Backend : GLib.Object {
         var enc = new Protobuf.EncodeBuffer ();
         init.encode (enc);
 
-        var err = Bridge.AnkiBytes () { ptr = null, len = 0 };
+        var err = AnkiBytes () { ptr = null, len = 0 };
  
-        backend = bridge.anki_backend_open (enc.data, enc.data.length, ref err);
+        backend = anki_backend_open (enc.data, enc.data.length, ref err);
 
-        throw_if_error( Bridge.AnkiResult() {
+        throw_if_error( AnkiResult() {
             ok  = backend == null ? 0 : 1,
             err = err
         });
@@ -60,28 +69,28 @@ public class Backend : GLib.Object {
     }
 
     ~Backend() {
-        lock (bridge) {
+        lock (backend) {
             debug("closing Backend");
-            bridge.anki_backend_close_collection(backend);
-            bridge.anki_backend_free(backend);
+            anki_backend_close_collection(backend);
+            anki_backend_free(backend);
         }
     }
 
     public void open_collection(string col_path, string media_dir, string media_db) throws BackendError {
-        lock (bridge) {
-            var res = bridge.anki_backend_open_collection(backend, col_path, media_dir, media_db);    
+        lock (backend) {
+            var res = anki_backend_open_collection(backend, col_path, media_dir, media_db);    
             throw_if_error( res );
         }
     }
 
     public void run_command(uint32 service, uint32 method, Protobuf.Message request, Protobuf.Message? output = null) throws BackendError {
-        lock (bridge) {
+        lock (backend) {
 
             var dreq_enc = new Protobuf.EncodeBuffer ();
 
             request.encode (dreq_enc);
 
-            var res = bridge.anki_backend_command (
+            var res = anki_backend_command (
                 backend,
                 service,
                 method,
@@ -100,13 +109,13 @@ public class Backend : GLib.Object {
 
             var buffer = new uint8[res.data.len];
             Memory.copy(buffer, res.data.ptr, res.data.len);
-            bridge.anki_bytes_free(res.data);
+            anki_bytes_free(res.data);
             
             output.decode( new Protobuf.DecodeBuffer (buffer) );
         }
     }
 
-    private void throw_if_error( Bridge.AnkiResult res ) throws BackendError {
+    private void throw_if_error( AnkiResult res ) throws BackendError {
         
         if (res.ok == 1)
             return;
@@ -116,7 +125,7 @@ public class Backend : GLib.Object {
 
         var buffer = new uint8[res.err.len];
         Memory.copy(buffer, res.err.ptr, res.err.len);
-        bridge.anki_bytes_free(res.err);
+        anki_bytes_free(res.err);
 
         var backend_error = new Anki.Backend.BackendError.from_data(
             new Protobuf.DecodeBuffer ( buffer ) 
@@ -140,7 +149,7 @@ public class Backend : GLib.Object {
         //  };
         //  var a_sync_syncauth = new Anki.Sync.SyncAuth();
 
-        //  bridge.run_command( 1, 3, a_sync_synclogin_req, a_sync_syncauth);
+        //  run_command( 1, 3, a_sync_synclogin_req, a_sync_syncauth);
 
         //  var a_sync_syncauth = new Anki.Sync.SyncAuth() {
         //      hkey = hkey,

@@ -26,6 +26,7 @@ public class AnkiReviewer : Window {
     }
 
     private string collection_media_dir = "";
+    private string collection_assets_dir = "";
 
     private Lipstick lipstick;
 
@@ -57,14 +58,6 @@ public class AnkiReviewer : Window {
         keyfile = new KeyFile ();
         keyfile.load_from_file ( config_file , KeyFileFlags.KEEP_COMMENTS); // relative to shell?? ( internal realpath )
 
-        // libanki.so
-        var libanki_path = keyfile.get_string ("General", "libanki_path");
-        libanki_path = libanki_path.replace("<arch>", FileUtils.test("/lib/ld-linux-armhf.so.3", FileTest.EXISTS) ? "armhf" : "armel" );
-        
-        if ( !Path.is_absolute(libanki_path) ) {
-            libanki_path = Path.build_filename( Path.get_dirname(config_file), libanki_path);
-        }
-
         // collection.anki2 collection.media collection.media.db2
         var collection_dir = keyfile.get_string ("General", "collection_dir");
         if ( !Path.is_absolute(collection_dir) ) {
@@ -83,11 +76,17 @@ public class AnkiReviewer : Window {
             _cmdir.make_directory_with_parents ();
         }
 
-        collection_media_dir = realpath( @"$(collection_dir)/collection.media" );
-        
-        debug(@"libanki_path $libanki_path collection_dir $collection_dir");
+        if ( !FileUtils.test( @"$(collection_dir)/.assets", FileTest.IS_DIR ) ) {
+            var _cmdir = File.new_for_path ( @"$(collection_dir)/.assets" );
+            _cmdir.make_directory_with_parents ();
+        }
 
-        backend = new Backend( libanki_path );
+        collection_media_dir = realpath( @"$(collection_dir)/collection.media" );
+        collection_assets_dir = realpath( @"$(collection_dir)/.assets" );
+        
+        debug(@"collection_dir $collection_dir");
+
+        backend = new Backend();
         backend.open_collection( @"$(collection_dir)/collection.anki2", @"$(collection_dir)/collection.media", @"$(collection_dir)/collection.media.db2" );
 
         // backend.load_hkey();
@@ -110,8 +109,14 @@ public class AnkiReviewer : Window {
 
     public void set_main_view (AppView view) {
 
-        if (main_view != null)
+        if (main_view != null) {
+            
+            for (int i = 0; i < main_view.cancellables.length; i++) {
+                main_view.cancellables.index(i).cancel();
+            }
+
             main_view.destroy();
+        }
 
         debug("after main_view.destroy() "); 
 
@@ -124,8 +129,9 @@ public class AnkiReviewer : Window {
 
         view.set_data<unowned Backend> ("backend", backend);
         view.set_data<unowned KeyFile> ("keyfile", keyfile);
-        // improve this
+
         view.set_data<string> ("collection_media_dir", collection_media_dir);
+        view.set_data<string> ("collection_assets_dir", collection_assets_dir);
         
         view.ready();
 
@@ -273,7 +279,7 @@ public class AnkiReviewer : Window {
             debug("show k %s", show.to_string());
             lipstick.set_string_property("com.lab126.keyboard", "open", @"$(app_id):abc:1");
         } else {
-            debug("hode k %s", show.to_string());
+            debug("hide k %s", show.to_string());
             lipstick.set_string_property("com.lab126.keyboard", "close", @"$(app_id)");
         }
 
@@ -281,6 +287,8 @@ public class AnkiReviewer : Window {
 
     ~AnkiReviewer() {
         debug("destroying AnkiReviewer");
+        if (main_view != null)
+            main_view.destroy();
     }
 
     private static string? config_file = null;
