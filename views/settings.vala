@@ -13,6 +13,11 @@ public class SettingsView : AppView {
                 <child>
                     <object class="InkScrolledWindow" id="scrolled_window">
                         <property name="name">settings-scrolled-window</property>
+
+                        <child>
+                        <object class="GtkVBox" id="main_vbox_2">
+                        <property name="spacing">10</property>
+
                         <child>
                         <object class="GtkHBox" id="hbox1">       
                             <property name="spacing">10</property>                  
@@ -36,6 +41,7 @@ public class SettingsView : AppView {
                         </object>
                         <packing>
                             <property name="expand">False</property>
+                            <property name="fill">False</property>
                         </packing>
                         </child>
 
@@ -58,6 +64,7 @@ public class SettingsView : AppView {
                         </object>
                         <packing>
                             <property name="expand">False</property>
+                            <property name="fill">False</property>
                         </packing>
                         </child>      
                         
@@ -81,6 +88,7 @@ public class SettingsView : AppView {
                         </object>
                         <packing>
                             <property name="expand">False</property>
+                            <property name="fill">False</property>
                         </packing>
                         </child>
 
@@ -91,6 +99,7 @@ public class SettingsView : AppView {
                         </object>
                         <packing>
                             <property name="expand">False</property>
+                            <property name="fill">False</property>
                         </packing>                        
                         </child>
 
@@ -102,6 +111,7 @@ public class SettingsView : AppView {
                         </object>
                         <packing>
                             <property name="expand">False</property>
+                            <property name="fill">False</property>
                         </packing>
                         </child>                        
 
@@ -129,6 +139,7 @@ public class SettingsView : AppView {
                         </object>
                         <packing>
                             <property name="expand">False</property>
+                            <property name="fill">False</property>
                         </packing>
                         </child>
 
@@ -140,6 +151,7 @@ public class SettingsView : AppView {
                             </object>
                             <packing>
                                 <property name="expand">False</property>
+                                <property name="fill">False</property>
                             </packing>                            
                         </child> 
 
@@ -149,10 +161,14 @@ public class SettingsView : AppView {
                             </object>
                             <packing>
                                 <property name="expand">False</property>
+                                <property name="fill">False</property>
                             </packing>
+                        </child>                    
+
+                        </object>             
                         </child>
-                        
-                    </object>
+
+                    </object>             
                 </child>
 
                 </object>                
