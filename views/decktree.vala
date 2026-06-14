@@ -68,6 +68,7 @@ public class DeckTreeView : AppView {
 
                     <child>
                     <object class="InkScrolledWindow" id="scrolled_window">
+                        <property name="name">decktree-scrolled-window</property>
                         <child>
                         <object class="InkTreeView" id="tree_view">
                             
@@ -217,7 +218,7 @@ public class DeckTreeView : AppView {
 
         backend.run_command( 7, 4, dtree_req, dtree_node);
 
-        debug("dtree_node %s", dtree_node.to_string() );
+        // debug("dtree_node %s", dtree_node.to_string() );
 
         var store = view.get_model() as TreeStore;
         store.clear();
@@ -227,6 +228,15 @@ public class DeckTreeView : AppView {
 
         view.expand_all ();
 
+        {
+            TreeIter iter;
+            if (store.get_iter_first (out iter)) {
+                TreePath path = store.get_path (iter);
+                view.set_cursor (path, null, false);
+            }
+            TreeSelection selection = view.get_selection ();
+            selection.unselect_all ();                
+        }
     }
 
     private void append_deck (TreeIter? parent_iter, Anki.Decks.DeckTreeNode deck) {
@@ -264,17 +274,28 @@ public class DeckTreeView : AppView {
 
     private async void sync_collection_button () {
 
-        string hkey = "";
+        var hkey = "";        
+        var endpoint = "";
 
-        try { 
-            hkey = keyfile.get_string("General", "hkey") ;
-            if ( hkey == null || hkey == "" ) {
-                navigate( new SettingsView() );
-                return;
-            }
+        try {
+            hkey = keyfile.get_string("General", "hkey") ?? "";
         } catch (Error e) {
             //
         }
+     
+        if (hkey.length == 0) {
+            navigate( new SettingsView() );
+            return;
+        }
+        
+        try {
+            endpoint = keyfile.get_string("General", "sync_server") ?? "";
+        } catch (Error e) {
+            //
+        } 
+
+        if (endpoint.length == 0)
+            endpoint = "https://ankiweb.net/";
 
         sync_button.set_sensitive(false);
         settings_button.set_sensitive(false);
@@ -285,7 +306,7 @@ public class DeckTreeView : AppView {
 
             var a_sync_syncauth = new Anki.Sync.SyncAuth() {
                 hkey = hkey,
-                endpoint = "https://ankiweb.net/"
+                endpoint = endpoint
             };
 
             yield run_thread<void>(
@@ -296,18 +317,21 @@ public class DeckTreeView : AppView {
 
         } catch (Error e) {
 
-            // show_alert()
-
             warning ("[error]: %s", e.message);
 
+            Gtk.Window? parent = get_toplevel () as Gtk.Window;
+
             var dialog = new Gtk.MessageDialog (
-                null,
+                parent,
                 Gtk.DialogFlags.MODAL,
                 Gtk.MessageType.ERROR,
                 Gtk.ButtonsType.CLOSE,
                 "[error]: %s",
                 e.message
             );
+
+            dialog.set_transient_for (parent);
+            dialog.set_position (Gtk.WindowPosition.CENTER_ON_PARENT);
 
             dialog.title = "L:A_N:application_ID:error_PC:N";
             dialog.run();

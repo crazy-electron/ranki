@@ -1,4 +1,4 @@
-# Ranki - Real Anki on Kindle
+# Ranki - Real Anki on Kindle ![ranki downloads](https://img.shields.io/github/downloads/crazy-electron/ranki/total)
 
 “Real Anki for e-ink. Not actually rank.”
 
@@ -28,6 +28,8 @@ It talks to the actual backend.
 ## Current Features
 
 - Login (stores a token only)
+- New: now you can set custom sync server
+- New: MathJax support, download pack on settings menu.
 - Sync decks
 - Download media (see below)
 - Review cards

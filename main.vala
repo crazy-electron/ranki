@@ -186,11 +186,19 @@ public class AnkiReviewer : Window {
         string contents = """
             style "app-font" {
                 font_name = "Amazon Ember Regular 10"
-                InkButton::ink-border = 1                  
-                InkScrolledWindow::ink-border = 1                  
+                InkButton::ink-border = 1
+                InkTreeView::expander-size = @25
+                GtkScrollbar::slider-width = 0
+                GtkScrollbar::stepper-size = 0
+                GtkScrollbar::trough-border = 0
             }
 
             widget_class "*" style "app-font"
+
+            style "decktree-scrolled-window" {          
+                InkScrolledWindow::ink-border = 1
+            }            
+            widget "*.decktree-scrolled-window" style "decktree-scrolled-window"                      
 
             style "primary" {
                 bg[NORMAL]   = "#000000" # normal background (0)

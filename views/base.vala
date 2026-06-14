@@ -25,6 +25,7 @@ public abstract class AppView : Gtk.EventBox { // Gtk.Bin ?
 
     public abstract string get_template();
     public Gtk.Builder builder;
+    public Array<Cancellable> cancellables = new Array<Cancellable>();
 
     public AppView() {
 
@@ -40,5 +41,8 @@ public abstract class AppView : Gtk.EventBox { // Gtk.Bin ?
         
     }
 
+    ~AppView() {
+        debug("destroy AppView");
+    }
 
 }

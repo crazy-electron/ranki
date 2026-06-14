@@ -158,6 +158,9 @@ public class ReviewView : AppView {
 
     private Anki.Scheduler.QueuedCards.QueuedCard? queued_card;
 
+    private CrazySpices.NoodleSoupServer assets_server;
+    private bool has_mathjax = false;
+
     public ReviewView ( int64 _deck_id = 0 ) { 
         
         deck_id = _deck_id;
@@ -210,10 +213,18 @@ public class ReviewView : AppView {
             //
         }
 
-        var collection_media_dir = get_data<string> ("collection_media_dir");
-        base_uri = "file://" + Path.build_filename (collection_media_dir, "") + "/";
+        base_uri = "file://" + get_data<string> ("collection_media_dir") + "/";
 
         debug(@"base_uri $base_uri");
+
+        var collection_assets_dir = get_data<string> ("collection_assets_dir");
+
+        assets_server = new CrazySpices.NoodleSoupServer( collection_assets_dir );
+
+        {
+            var dir  = File.new_for_path( Path.build_path (Path.DIR_SEPARATOR_S, collection_assets_dir, "MathJax-2.7.9") );
+            has_mathjax = dir.query_exists();
+        }        
 
         var selected_deck_id_req = new Anki.Decks.DeckId(){ did = deck_id };
 
@@ -255,8 +266,8 @@ public class ReviewView : AppView {
         
         queued_card = queued.cards.nth_data(0);
 
-        debug("QueuedCards %s", queued.to_string() );
-        debug("queued card %s", queued_card.card.to_string() );
+        //  debug("queued cards %s", queued.to_string() );
+        //  debug("queued card %s", queued_card.card.to_string() );
 
         var rreq = new Anki.Card_rendering.RenderExistingCardRequest(){
             card_id = queued_card.card.id,
@@ -271,24 +282,30 @@ public class ReviewView : AppView {
         card_question_text = rresp.question_nodes.length() > 0 ? rresp.question_nodes.nth_data(0).text : "";
         card_answer_text   = rresp.answer_nodes.length() > 0 ? rresp.answer_nodes.nth_data(0).text : "";
         card_css = rresp.css;
-        debug("rresp.question_nodes.length() %d", (int) rresp.question_nodes.length() );
+
+        //  debug("rresp.question_nodes.length() %d", (int) rresp.question_nodes.length() );
 
         bury_btn.show();
 
         card_content.show();
 
-        string html_content = @"
-            <!doctype html>
-            <html>
-                <head>
-                    <meta charset=\"utf-8\">
-                    <style>$card_css</style>
-                </head>
-                <body>
-                    <div class=\"card kindle\">$card_question_text</div>
-                </body>
-            </html>
-        ";
+        string html_content = "";
+
+        html_content += "<!doctype html>";
+        html_content += "<html>";
+        html_content += "    <head>";
+        html_content += "        <meta charset=\"utf-8\">";
+        html_content += "        <meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">";
+        if ( has_mathjax ) {
+            html_content += "    <script defer src=\"http://127.0.0.1:" + assets_server.port.to_string() + "/MathJax-2.7.9/MathJax.js?config=default\"></script>";
+            html_content += "    <style>#MathJax_Message { display: none; }</style>";
+        }
+        html_content += "        <style>" + card_css + "</style>";
+        html_content += "    </head>";
+        html_content += "    <body>";
+        html_content += "        <div class=\"card kindle\">" + card_question_text + "</div>";
+        html_content += "    </body>";
+        html_content += "</html>";
 
         card_content.load_html_string (html_content, base_uri);
 
@@ -318,18 +335,25 @@ public class ReviewView : AppView {
 
     private void show_answer() {
 
-        string html_content = @"
-            <!doctype html>
-            <html>
-                <head>
-                    <meta charset=\"utf-8\">
-                    <style>$card_css</style>
-                </head>
-                <body>
-                    <div class=\"card kindle\">$card_answer_text</div>
-                </body>
-            </html>
-        ";
+        string html_content = "";
+
+        html_content += "<!doctype html>";
+        html_content += "<html>";
+        html_content += "    <head>";
+        html_content += "        <meta charset=\"utf-8\">";
+        html_content += "        <meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">";
+        if ( has_mathjax ) {
+            html_content += "    <script defer src=\"http://127.0.0.1:" + assets_server.port.to_string() + "/MathJax-2.7.9/MathJax.js?config=default\"></script>";
+            html_content += "    <style>#MathJax_Message { display: none; }</style>";            
+        }
+        html_content += "        <style>" + card_css + "</style>";
+        html_content += "    </head>";
+        html_content += "    <body>";
+        html_content += "        <div class=\"card kindle\">" + card_answer_text + "</div>";
+        html_content += "    </body>";
+        html_content += "</html>";
+
+        debug(@"html_content $html_content");
 
         card_content.load_html_string (html_content, base_uri);
 
