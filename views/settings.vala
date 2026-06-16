@@ -168,8 +168,24 @@ public class SettingsView : AppView {
                         </object>             
                         </child>
 
-                    </object>             
+                    </object>
+                    <packing>
+                        <property name="expand">True</property>
+                        <property name="fill">True</property>
+                    </packing>                                 
                 </child>
+
+                <child>
+                <object class="GtkLabel" id="label_notice">
+                    <property name="label"></property>
+                    <property name="no_show_all">True</property>
+                    <property name="justify">center</property>
+                </object>
+                <packing>
+                    <property name="expand">False</property>
+                    <property name="fill">False</property>
+                </packing>
+                </child>                
 
                 </object>                
             </interface>              
@@ -183,6 +199,7 @@ public class SettingsView : AppView {
     private Button back_button;
     private InkRowHScale content_scale;
     private Button download_mathjax_button;
+    private Label label_notice;    
 
     private Entry sync_server_entry;
     private InkRowToggleButton sync_server_toggle;
@@ -192,7 +209,7 @@ public class SettingsView : AppView {
     public bool loading { get; set; default = false; }
 
     public string collection_assets_dir { get {
-        return get_data<string> ("collection_assets_dir");        
+        return store._get_data<string> ("collection_assets_dir");        
     } }    
 
     public SettingsView ( string data = "") {
@@ -221,6 +238,8 @@ public class SettingsView : AppView {
         content_scale.lower = 1;
 
         download_mathjax_button = builder.get_object ("download_mathjax") as Button;
+
+        label_notice = builder.get_object ("label_notice") as Label;
         
         var entries = new Widget[] { username_entry, password_entry, sync_server_entry };
 
@@ -279,6 +298,26 @@ public class SettingsView : AppView {
         bind_settings<double> (keyfile, "General", "scale", content_scale, "value", () => { 
             do_action(AnkiReviewer.AppViewActions.SAVE_SETTINGS);
         });
+
+        var ranki_version = store._get_data<string> ("ranki_version");
+        var new_version   = store._get_data<string> ("new_version");        
+
+        var message = @"$ranki_version - https://github.com/crazy-electron/ranki";
+
+        if ( new_version != null ) {
+            message = @"<b>new version available: $new_version</b>\n$message";
+        } else {
+            store.store_changed.connect((key) => {
+                if (key != "new_version") return;
+                var _new_version = store._get_data<string> ("new_version");
+                var _message = @"<b>new version available: $_new_version</b>\n$message";
+                label_notice.set_markup (_message);
+            });
+        }
+
+        label_notice.set_markup (message);
+        label_notice.show();
+
     }
 
     private async void download_mathjax() {
@@ -307,13 +346,13 @@ public class SettingsView : AppView {
 
             debug("Temporary file created: %s", path);
         
-            yield CrazySpices.run_thread<void>(() => {
+            yield run_thread<void>(() => {
 
                 int64 last = 0, elapsed = 0;
    
                 debug("downloading...");
                 
-                CrazySpices.ZipDownloader.download( 
+                Downloader.download( 
                     "https://github.com/mathjax/MathJax/archive/2.7.9.zip",
                     file,
                     (now, total) => {
@@ -339,7 +378,7 @@ public class SettingsView : AppView {
 
                 debug("extracting...");
 
-                CrazySpices.extract_zip(
+                extract_zip(
                     file,
                     collection_assets_dir,
                     (now, total) => {
@@ -387,7 +426,7 @@ public class SettingsView : AppView {
         var dir  = File.new_for_path(path);
 
         try {
-            yield CrazySpices.run_thread<void>(() => { CrazySpices.delete_tree(dir); });
+            yield run_thread<void>(() => { delete_tree(dir); });
             has_mathjax = false;
         } catch (Error e) {
             debug("Operation cancelled!");
@@ -451,7 +490,7 @@ public class SettingsView : AppView {
             dialog.set_transient_for (parent);
             dialog.set_position (Gtk.WindowPosition.CENTER_ON_PARENT);
 
-            dialog.title = "L:A_N:application_ID:error_PC:N";
+            dialog.title = "L:A_D:application_ID:error_PC:N";
             dialog.run();
             dialog.destroy();
 

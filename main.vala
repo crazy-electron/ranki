@@ -7,6 +7,19 @@ errordomain AnkiReviewerError {
     ERROR
 }
 
+public class Store : GLib.Object {
+    public signal void store_changed (string key);
+
+    public unowned T _get_data<T> (string key) {
+        return base.get_data<T> (key); 
+    }
+
+    public void _set_data<T> (string key, owned T data){
+        base.set_data<T> (key, (owned) data);
+        store_changed (key);
+    }   
+}
+
 public class AnkiReviewer : Window {
 
     private static weak AnkiReviewer? self = null;
@@ -25,9 +38,6 @@ public class AnkiReviewer : Window {
         HIDE_KEYBOARD
     }
 
-    private string collection_media_dir = "";
-    private string collection_assets_dir = "";
-
     private Lipstick lipstick;
 
     private Debouncer save_settings_debouncer;
@@ -37,7 +47,10 @@ public class AnkiReviewer : Window {
 
     public bool fullscreen { get; set; default = true; }
 
-    public AnkiReviewer () throws AnkiReviewerError, KeyFileError, FileError {
+    [CCode (cname = "RANKI_VERSION")]
+    public extern const string RANKI_VERSION;      
+
+    public AnkiReviewer () throws Error {
 
         Intl.setlocale (LocaleCategory.ALL, "");
 
@@ -81,15 +94,16 @@ public class AnkiReviewer : Window {
             _cmdir.make_directory_with_parents ();
         }
 
-        collection_media_dir = realpath( @"$(collection_dir)/collection.media" );
-        collection_assets_dir = realpath( @"$(collection_dir)/.assets" );
-        
         debug(@"collection_dir $collection_dir");
 
         backend = new Backend();
         backend.open_collection( @"$(collection_dir)/collection.anki2", @"$(collection_dir)/collection.media", @"$(collection_dir)/collection.media.db2" );
 
-        // backend.load_hkey();
+        store._set_data<string> ("collection_media_dir", realpath( @"$(collection_dir)/collection.media" ));
+        store._set_data<string> ("collection_assets_dir", realpath( @"$(collection_dir)/.assets" ));        
+        store._set_data<unowned Backend> ("backend", backend);
+        store._set_data<unowned KeyFile> ("keyfile", keyfile);
+        store._set_data<string> ("ranki_version", RANKI_VERSION);        
 
         save_settings_debouncer = new Debouncer<void*> (500, () => {
             debug ("save_settings");
@@ -105,7 +119,40 @@ public class AnkiReviewer : Window {
 
         set_main_view( new DeckTreeView() );        
 
+        check_updates();
     }
+
+    public async void check_updates () {
+
+        try {
+
+            var data = yield run_thread<string>(
+                () => Downloader.fetch("https://api.github.com/repos/crazy-electron/ranki/releases/latest")
+            );
+
+            var parser = new Json.Parser ();
+            parser.load_from_data (data, -1);
+
+            var root = parser.get_root ().get_object ();
+
+            if ( !root.has_member ("tag_name") ) {
+                return;
+            }
+
+            var latest_version = root.get_string_member ("tag_name");
+
+            if ( latest_version.collate( RANKI_VERSION ) > 0) {
+                store._set_data<string> ("new_version", latest_version);
+            }
+
+        } catch (Error e) {
+            debug(@"unable to check last version: $(e.message)");
+            return;
+        }
+
+    }
+
+    public Store store = new Store();
 
     public void set_main_view (AppView view) {
 
@@ -127,11 +174,7 @@ public class AnkiReviewer : Window {
 
         view.do_action.connect((action) => do_action(action));
 
-        view.set_data<unowned Backend> ("backend", backend);
-        view.set_data<unowned KeyFile> ("keyfile", keyfile);
-
-        view.set_data<string> ("collection_media_dir", collection_media_dir);
-        view.set_data<string> ("collection_assets_dir", collection_assets_dir);
+        view.store = store;
         
         view.ready();
 
@@ -181,7 +224,7 @@ public class AnkiReviewer : Window {
 
     }
 
-    private void load_style_rc_file() {
+    private void load_style_rc_file() throws Error {
 
         string contents = """
             style "app-font" {
@@ -277,18 +320,20 @@ public class AnkiReviewer : Window {
 
     private void show_keyboard (bool show = true) {
 
-        debug("show_keyboard %s", show.to_string());
-        var visible = lipstick.get_int_property("com.lab126.keyboard", "show") == 1;
+        try {
+            debug("show_keyboard %s", show.to_string());
+            var visible = lipstick.get_int_property("com.lab126.keyboard", "show") == 1;
 
-        if ( show == visible )
-            return;
-        
-        if (show) {
-            debug("show k %s", show.to_string());
-            lipstick.set_string_property("com.lab126.keyboard", "open", @"$(app_id):abc:1");
-        } else {
-            debug("hide k %s", show.to_string());
-            lipstick.set_string_property("com.lab126.keyboard", "close", @"$(app_id)");
+            if ( show == visible )
+                return;
+            
+            if (show) {
+                lipstick.set_string_property("com.lab126.keyboard", "open", @"$(app_id):abc:1");
+            } else {
+                lipstick.set_string_property("com.lab126.keyboard", "close", @"$(app_id)");
+            }
+        } catch (Error e) {
+            warning(@"show_keyboard lipstick error $(e.message)");
         }
 
     }    
@@ -314,13 +359,12 @@ public class AnkiReviewer : Window {
             var _webview = new WebKit.WebView ();
         }
 
-        string exe_path = null;
+        string exe_path = args[0];
 
         try {
             exe_path = FileUtils.read_link("/proc/self/exe"); // bin file path
         } catch (Error e) {
             warning("Failed to find executable path: %s\n", e.message);
-            exe_path = args[0];
         }
 
         exe_dir = Path.get_dirname(exe_path);

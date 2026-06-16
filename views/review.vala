@@ -1,6 +1,7 @@
 using Gtk;
 using GLib;
 using WebKit;
+using CrazySpices;
 
 public class ReviewView : AppView {
 
@@ -158,7 +159,7 @@ public class ReviewView : AppView {
 
     private Anki.Scheduler.QueuedCards.QueuedCard? queued_card;
 
-    private CrazySpices.NoodleSoupServer assets_server;
+    private NoodleSoupServer assets_server;
     private bool has_mathjax = false;
 
     public ReviewView ( int64 _deck_id = 0 ) { 
@@ -213,13 +214,11 @@ public class ReviewView : AppView {
             //
         }
 
-        base_uri = "file://" + get_data<string> ("collection_media_dir") + "/";
+        base_uri = "file://" + store._get_data<string> ("collection_media_dir") + "/";
 
-        debug(@"base_uri $base_uri");
+        var collection_assets_dir = store._get_data<string> ("collection_assets_dir");
 
-        var collection_assets_dir = get_data<string> ("collection_assets_dir");
-
-        assets_server = new CrazySpices.NoodleSoupServer( collection_assets_dir );
+        assets_server = new NoodleSoupServer( collection_assets_dir );
 
         {
             var dir  = File.new_for_path( Path.build_path (Path.DIR_SEPARATOR_S, collection_assets_dir, "MathJax-2.7.9") );

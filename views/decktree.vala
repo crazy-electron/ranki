@@ -90,7 +90,19 @@ public class DeckTreeView : AppView {
                     <packing>
                         <property name="fill">False</property>
                     </packing>
-                    </child>                 
+                    </child>
+                    
+                    <child>
+                    <object class="GtkLabel" id="label_notice">
+                        <property name="label">new version available: v0.2 \n check: https://github.com/crazy-electron/ranki</property>
+                        <property name="no_show_all">True</property>
+                        <property name="justify">center</property>
+                    </object>
+                    <packing>
+                        <property name="expand">False</property>
+                        <property name="fill">False</property>
+                    </packing>
+                    </child>                    
 
                 </object>
             </interface>              
@@ -102,6 +114,7 @@ public class DeckTreeView : AppView {
     private Button sync_button;
     private Spinner spinner;
     private ScrolledWindow scrolled_window;
+    private Label label_notice;
 
     public DeckTreeView ( string data = "") {
 
@@ -117,18 +130,14 @@ public class DeckTreeView : AppView {
 
         (builder.get_object ("fullscreen_btn") as Button).clicked.connect (() => {
             do_action(AnkiReviewer.AppViewActions.TOGGLE_FULLSCREEN);
-        });    
-
-        //  (builder.get_object ("show_modal") as Button).clicked.connect (() => {
-        //      do_action(AnkiReviewer.AppViewActions.SAVE_SETTINGS);
-        //  });             
+        });      
 
         sync_button = builder.get_object ("sync_button") as Button;
 
         scrolled_window = builder.get_object ("scrolled_window") as ScrolledWindow;
 
         spinner = builder.get_object ("spinner") as Spinner;
-
+        label_notice = builder.get_object ("label_notice") as Label;
 
         sync_button.clicked.connect (() => sync_collection_button());
 
@@ -207,6 +216,21 @@ public class DeckTreeView : AppView {
     public override void ready() {
         debug("DeckTreeView ready");
         populate_decktree();
+
+        var new_version = store._get_data<string> ("new_version");        
+
+        if ( new_version != null ) {
+            label_notice.set_markup (@"<b>new version available: $new_version</b>\nvisit https://github.com/crazy-electron/ranki");
+            label_notice.show();
+        }
+
+        store.store_changed.connect((key) => {
+            if (key != "new_version") return;
+            var _new_version = store._get_data<string> ("new_version");
+            label_notice.set_markup (@"<b>new version available: $_new_version</b>\nVisit https://github.com/crazy-electron/ranki");
+            label_notice.show();
+        });
+
     }
 
     private void populate_decktree() {
@@ -333,7 +357,7 @@ public class DeckTreeView : AppView {
             dialog.set_transient_for (parent);
             dialog.set_position (Gtk.WindowPosition.CENTER_ON_PARENT);
 
-            dialog.title = "L:A_N:application_ID:error_PC:N";
+            dialog.title = "L:A_D:application_ID:error_PC:N";
             dialog.run();
             dialog.destroy();
 
