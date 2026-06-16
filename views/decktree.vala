@@ -94,7 +94,7 @@ public class DeckTreeView : AppView {
                     
                     <child>
                     <object class="GtkLabel" id="label_notice">
-                        <property name="label">new version available: v0.2 \n check: https://github.com/crazy-electron/ranki</property>
+                        <property name="label"></property>
                         <property name="no_show_all">True</property>
                         <property name="justify">center</property>
                     </object>
