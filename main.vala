@@ -1,23 +1,9 @@
-
 using Gtk;
 using GLib;
 using CrazySpices;
 
 errordomain AnkiReviewerError {
     ERROR
-}
-
-public class Store : GLib.Object {
-    public signal void store_changed (string key);
-
-    public unowned T _get_data<T> (string key) {
-        return base.get_data<T> (key); 
-    }
-
-    public void _set_data<T> (string key, owned T data){
-        base.set_data<T> (key, (owned) data);
-        store_changed (key);
-    }   
 }
 
 public class AnkiReviewer : Window {
@@ -99,11 +85,11 @@ public class AnkiReviewer : Window {
         backend = new Backend();
         backend.open_collection( @"$(collection_dir)/collection.anki2", @"$(collection_dir)/collection.media", @"$(collection_dir)/collection.media.db2" );
 
-        store._set_data<string> ("collection_media_dir", realpath( @"$(collection_dir)/collection.media" ));
-        store._set_data<string> ("collection_assets_dir", realpath( @"$(collection_dir)/.assets" ));        
-        store._set_data<unowned Backend> ("backend", backend);
-        store._set_data<unowned KeyFile> ("keyfile", keyfile);
-        store._set_data<string> ("ranki_version", RANKI_VERSION);        
+        store.set_item<string> ("collection_media_dir", realpath( @"$(collection_dir)/collection.media" ));
+        store.set_item<string> ("collection_assets_dir", realpath( @"$(collection_dir)/.assets" ));        
+        store.set_item<unowned Backend> ("backend", backend);
+        store.set_item<unowned KeyFile> ("keyfile", keyfile);
+        store.set_item<string> ("ranki_version", RANKI_VERSION);        
 
         save_settings_debouncer = new Debouncer<void*> (500, () => {
             debug ("save_settings");
@@ -117,7 +103,7 @@ public class AnkiReviewer : Window {
         
         load_style_rc_file();
 
-        set_main_view( new DeckTreeView() );        
+        set_main_view( typeof (DeckTreeView) );
 
         check_updates();
     }
@@ -142,7 +128,7 @@ public class AnkiReviewer : Window {
             var latest_version = root.get_string_member ("tag_name");
 
             if ( latest_version.collate( RANKI_VERSION ) > 0) {
-                store._set_data<string> ("new_version", latest_version);
+                store.set_item<string> ("new_version", latest_version);
             }
 
         } catch (Error e) {
@@ -154,31 +140,35 @@ public class AnkiReviewer : Window {
 
     public Store store = new Store();
 
-    public void set_main_view (AppView view) {
+    public void set_main_view (Type view_type, owned Parameter[] _parameters = {}) throws Error {
+
+        if (!view_type.is_a (typeof (AppView))) {
+            throw new AnkiReviewerError.ERROR ("set_main_view only accepts AppView subclasses");
+        }
 
         if (main_view != null) {
-            
             for (int i = 0; i < main_view.cancellables.length; i++) {
                 main_view.cancellables.index(i).cancel();
             }
-
             main_view.destroy();
         }
 
-        debug("after main_view.destroy() "); 
+        var parameters = (owned) _parameters;
 
-        // wire
-        view.navigate.connect((v) => set_main_view(v));
+        var value = Value (typeof (GLib.Object));
+        value.set_object ( store );
 
-        view.exit_app.connect(() => destroy());
-
-        view.do_action.connect((action) => do_action(action));
-
-        view.store = store;
+        parameters += Parameter() { name = "store", value = value };
         
-        view.ready();
+        main_view = (AppView) Initable.newv (view_type, parameters /*, cancellable */);
 
-        main_view = view;
+        main_view.navigate.connect((v, p) => set_main_view(v, p));
+
+        main_view.exit_app.connect(() => destroy());
+
+        main_view.do_action.connect((action) => do_action(action));
+
+        main_view.ref(); // vala bug? (Initable.newv)
 
         add (main_view);
 

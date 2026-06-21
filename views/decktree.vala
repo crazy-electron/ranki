@@ -5,8 +5,6 @@ using CrazySpices;
 
 public class DeckTreeView : AppView {
 
-    private InkTreeView view;
-
     public override string get_template(){
 
         return """
@@ -114,9 +112,10 @@ public class DeckTreeView : AppView {
     private Button sync_button;
     private Spinner spinner;
     private ScrolledWindow scrolled_window;
+    private InkTreeView view;    
     private Label label_notice;
 
-    public DeckTreeView ( string data = "") {
+    public override void ready () throws Error {
 
         debug("new DeckTreeView");
 
@@ -125,7 +124,7 @@ public class DeckTreeView : AppView {
         settings_button = builder.get_object ("settings_button") as Button;
         settings_button.clicked.connect (() => {
             debug("settings_button");
-            navigate( new SettingsView() );
+            navigate( typeof(SettingsView) );
         });
 
         (builder.get_object ("fullscreen_btn") as Button).clicked.connect (() => {
@@ -143,7 +142,7 @@ public class DeckTreeView : AppView {
 
         view = builder.get_object ("tree_view") as InkTreeView;
 
-        var store = new TreeStore (5, 
+        var tree_store = new TreeStore (5, 
             typeof (int64),   // 0: _deck_id
             typeof (string),  // 1: "Deck"
             typeof (string),  // 2: "New"
@@ -154,7 +153,7 @@ public class DeckTreeView : AppView {
         int xpad = (int) (10 * scaling);
         int ypad = (int) (10 * scaling);
 
-        view.set_model (store);        
+        view.set_model (tree_store);        
         view.insert_column_with_attributes (-1, "Deck", new CellRendererText () { ypad = ypad, xpad = xpad }, "text", 1, null);
         view.insert_column_with_attributes (-1, "New", new CellRendererText () { ypad = ypad, xpad = xpad }, "text", 2, null);
         view.insert_column_with_attributes (-1, "Learn", new CellRendererText () { ypad = ypad, xpad = xpad }, "text", 3, null);
@@ -172,64 +171,28 @@ public class DeckTreeView : AppView {
 
         view.path_selected.connect((path) => {
             var deck_id = get_deck_id_at_path(path);
-            debug("select deck %lld", deck_id);
-            navigate( new ReviewView( deck_id ) );
-                      
+
+            var value = Value (typeof (int64));
+            value.set_int64 ( deck_id );
+
+            navigate( typeof(ReviewView), { Parameter() { name = "deck_id", value = value } } );           
         });
 
-    }
-
-    private void show_modal() {
-
-        warning ("[error]: %s", "e.message");
-
-        var dialog = new Gtk.MessageDialog (
-            null,
-            Gtk.DialogFlags.MODAL,
-            Gtk.MessageType.ERROR,
-            Gtk.ButtonsType.CLOSE,
-            "[error]: %s",
-            "e.message"
-        );
-
-        dialog.response.connect ((response_id) => {
-            debug("response_id %d", (int)response_id);
-			switch (response_id) {
-				case Gtk.ResponseType.OK:
-					print ("Ok\n");
-					break;
-				case Gtk.ResponseType.CANCEL:
-					print ("Cancel\n");
-					break;
-				case Gtk.ResponseType.DELETE_EVENT:
-					print ("Delete\n");
-					break;
-			}
-            dialog.destroy();
-        });     
-
-        dialog.title = "L:A_N:application_ID:modal_PC:N";
-        dialog.run();
-
-    }
-
-    public override void ready() {
         debug("DeckTreeView ready");
         populate_decktree();
 
-        var new_version = store._get_data<string> ("new_version");        
+        var new_version = store.get_item<string> ("new_version");        
 
         if ( new_version != null ) {
             label_notice.set_markup (@"<b>new version available: $new_version</b>\nvisit https://github.com/crazy-electron/ranki");
             label_notice.show();
+        } else {
+            store.signal_connect<string>("new_version", (_new_version) => {
+                debug("new_version");
+                label_notice.set_markup (@"<b>new version available: $_new_version</b>\nVisit https://github.com/crazy-electron/ranki");
+                label_notice.show();
+            }, this);
         }
-
-        store.store_changed.connect((key) => {
-            if (key != "new_version") return;
-            var _new_version = store._get_data<string> ("new_version");
-            label_notice.set_markup (@"<b>new version available: $_new_version</b>\nVisit https://github.com/crazy-electron/ranki");
-            label_notice.show();
-        });
 
     }
 
@@ -244,8 +207,8 @@ public class DeckTreeView : AppView {
 
         // debug("dtree_node %s", dtree_node.to_string() );
 
-        var store = view.get_model() as TreeStore;
-        store.clear();
+        var tree_store = view.get_model() as TreeStore;
+        tree_store.clear();
         
         foreach (Anki.Decks.DeckTreeNode child in dtree_node.children)
             append_deck (null, child);
@@ -254,8 +217,8 @@ public class DeckTreeView : AppView {
 
         {
             TreeIter iter;
-            if (store.get_iter_first (out iter)) {
-                TreePath path = store.get_path (iter);
+            if (tree_store.get_iter_first (out iter)) {
+                TreePath path = tree_store.get_path (iter);
                 view.set_cursor (path, null, false);
             }
             TreeSelection selection = view.get_selection ();
@@ -266,10 +229,10 @@ public class DeckTreeView : AppView {
     private void append_deck (TreeIter? parent_iter, Anki.Decks.DeckTreeNode deck) {
         
         TreeIter iter;
-        var store = view.get_model() as TreeStore;
+        var tree_store = view.get_model() as TreeStore;
 
-        store.append (out iter, parent_iter);
-        store.set (iter,
+        tree_store.append (out iter, parent_iter);
+        tree_store.set (iter,
             0, deck.deck_id,
             1, deck.name ?? "Unnamed",
             2, @"$(deck.new_count)",    // New     
@@ -308,7 +271,7 @@ public class DeckTreeView : AppView {
         }
      
         if (hkey.length == 0) {
-            navigate( new SettingsView() );
+            navigate( typeof(SettingsView) );
             return;
         }
         
@@ -343,19 +306,19 @@ public class DeckTreeView : AppView {
 
             warning ("[error]: %s", e.message);
 
-            Gtk.Window? parent = get_toplevel () as Gtk.Window;
+            Window? parent = get_toplevel () as Window;
 
-            var dialog = new Gtk.MessageDialog (
+            var dialog = new MessageDialog (
                 parent,
-                Gtk.DialogFlags.MODAL,
-                Gtk.MessageType.ERROR,
-                Gtk.ButtonsType.CLOSE,
+                DialogFlags.MODAL,
+                MessageType.ERROR,
+                ButtonsType.CLOSE,
                 "[error]: %s",
                 e.message
             );
 
             dialog.set_transient_for (parent);
-            dialog.set_position (Gtk.WindowPosition.CENTER_ON_PARENT);
+            dialog.set_position (WindowPosition.CENTER_ON_PARENT);
 
             dialog.title = "L:A_D:application_ID:error_PC:N";
             dialog.run();

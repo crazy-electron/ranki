@@ -209,16 +209,16 @@ public class SettingsView : AppView {
     public bool loading { get; set; default = false; }
 
     public string collection_assets_dir { get {
-        return store._get_data<string> ("collection_assets_dir");        
+        return store.get_item<string> ("collection_assets_dir");        
     } }    
 
-    public SettingsView ( string data = "") {
+    public override void ready () throws Error {
 
         debug("new SettingsView");
 
         back_button = builder.get_object ("back_button") as Button;
         
-        back_button.clicked.connect (() => navigate( new DeckTreeView() ));
+        back_button.clicked.connect (() => navigate( typeof(DeckTreeView) ));
         
         username_entry = builder.get_object ("username_entry") as Entry;
     
@@ -281,10 +281,6 @@ public class SettingsView : AppView {
         bind_property ("loading", username_entry, "sensitive", GLib.BindingFlags.DEFAULT | BindingFlags.INVERT_BOOLEAN | GLib.BindingFlags.SYNC_CREATE);
         bind_property ("loading", password_entry, "sensitive", GLib.BindingFlags.DEFAULT | BindingFlags.INVERT_BOOLEAN | GLib.BindingFlags.SYNC_CREATE);
         bind_property ("loading", download_mathjax_button, "sensitive", GLib.BindingFlags.DEFAULT | BindingFlags.INVERT_BOOLEAN | GLib.BindingFlags.SYNC_CREATE);
-    
-    }
-
-    public override void ready(){
 
         {
             var dir  = File.new_for_path( Path.build_path (Path.DIR_SEPARATOR_S, collection_assets_dir, "MathJax-2.7.9") );
@@ -299,20 +295,18 @@ public class SettingsView : AppView {
             do_action(AnkiReviewer.AppViewActions.SAVE_SETTINGS);
         });
 
-        var ranki_version = store._get_data<string> ("ranki_version");
-        var new_version   = store._get_data<string> ("new_version");        
+        var ranki_version = store.get_item<string> ("ranki_version");
+        var new_version   = store.get_item<string> ("new_version");        
 
         var message = @"$ranki_version - https://github.com/crazy-electron/ranki";
 
         if ( new_version != null ) {
             message = @"<b>new version available: $new_version</b>\n$message";
         } else {
-            store.store_changed.connect((key) => {
-                if (key != "new_version") return;
-                var _new_version = store._get_data<string> ("new_version");
+            store.signal_connect<string>("new_version", (_new_version) => {
                 var _message = @"<b>new version available: $_new_version</b>\n$message";
                 label_notice.set_markup (_message);
-            });
+            }, this);
         }
 
         label_notice.set_markup (message);
@@ -470,25 +464,25 @@ public class SettingsView : AppView {
 
             do_action(AnkiReviewer.AppViewActions.SAVE_SETTINGS);
 
-            navigate( new DeckTreeView( ) );
+            navigate( typeof(DeckTreeView) );
 
         } catch (Error e) {
 
             warning ("[error]: %s", e.message);
 
-            Gtk.Window? parent = get_toplevel () as Gtk.Window;
+            Window? parent = get_toplevel () as Window;
 
-            var dialog = new Gtk.MessageDialog (
+            var dialog = new MessageDialog (
                 parent,
-                Gtk.DialogFlags.MODAL,
-                Gtk.MessageType.ERROR,
-                Gtk.ButtonsType.CLOSE,
+                DialogFlags.MODAL,
+                MessageType.ERROR,
+                ButtonsType.CLOSE,
                 "[error]: %s",
                 e.message
             );
 
             dialog.set_transient_for (parent);
-            dialog.set_position (Gtk.WindowPosition.CENTER_ON_PARENT);
+            dialog.set_position (WindowPosition.CENTER_ON_PARENT);
 
             dialog.title = "L:A_D:application_ID:error_PC:N";
             dialog.run();

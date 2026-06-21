@@ -135,8 +135,6 @@ public class ReviewView : AppView {
 
     }
 
-    private int64 deck_id;
-
     private WebView card_content;
 
     private Label stats_lbl;
@@ -162,12 +160,12 @@ public class ReviewView : AppView {
     private NoodleSoupServer assets_server;
     private bool has_mathjax = false;
 
-    public ReviewView ( int64 _deck_id = 0 ) { 
-        
-        deck_id = _deck_id;
+    public int64 deck_id { get; construct; }
+
+    public override void ready ( /* int64 deck_id */ ) throws Error {
 
         (builder.get_object ("back_button") as Button).clicked.connect (() => {
-            navigate( new DeckTreeView() );
+            navigate( typeof(DeckTreeView) );
         });
 
         bury_btn = builder.get_object ("bury_btn") as Button;
@@ -200,12 +198,6 @@ public class ReviewView : AppView {
 
         show_answer_btn.clicked.connect (() => show_answer());
 
-    }
-
-    public override void ready() {
-
-        debug("DeckTreeView ready");
-
         try { 
             card_content.set_zoom_level(
                 (float) (keyfile.get_double("General", "scale") * scaling)
@@ -214,9 +206,9 @@ public class ReviewView : AppView {
             //
         }
 
-        base_uri = "file://" + store._get_data<string> ("collection_media_dir") + "/";
+        base_uri = "file://" + store.get_item<string> ("collection_media_dir") + "/";
 
-        var collection_assets_dir = store._get_data<string> ("collection_assets_dir");
+        var collection_assets_dir = store.get_item<string> ("collection_assets_dir");
 
         assets_server = new NoodleSoupServer( collection_assets_dir );
 
