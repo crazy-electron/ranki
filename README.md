@@ -18,7 +18,7 @@ Built for `armel` and `armhf` (tested on 5.14.3, 5.17.1 and 5.18.5)
 ## What is this?
 
 Ranki is a lightweight reviewer built for Kindle e-readers.  
-It uses the Anki backend (via protobuf, pinned to version **25.09.02**) so sync and scheduling behave like official Anki.
+It uses the Anki backend (via protobuf, pinned to version **26.09.4**) so sync and scheduling behave like official Anki.
 
 This is not a reimplementation of Anki’s algorithm.
 It talks to the actual backend.
@@ -59,7 +59,7 @@ Launch via KUAL and/or copy the shortcut (`shortcut_ranki.sh`) to `/mnt/us/docum
 - Written in **Vala/GTK2**
 - Uses **WebKitGTK**
 - Communicates with the Anki backend using **protobuf**
-- Backend version pinned to **25.09.02**
+- Backend version pinned to **26.09.4**
 
 ---
 
