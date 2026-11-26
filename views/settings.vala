@@ -144,6 +144,16 @@ public class SettingsView : AppView {
                         </child>
 
                         <child>
+                            <object class="GtkCheckButton" id="skip_audio">
+                                <property name="label">Skip audio during media sync</property>
+                            </object>
+                            <packing>
+                                <property name="expand">False</property>
+                                <property name="fill">False</property>
+                            </packing>
+                        </child>
+
+                        <child>
                             <object class="InkRowHScale" id="content_scale">
                                 <property name="label">Scale</property>
                                 <property name="description">Scale card content.</property>
@@ -230,6 +240,26 @@ public class SettingsView : AppView {
 
         sync_server_entry  = builder.get_object ("sync_server_entry") as Entry;
         sync_server_toggle = builder.get_object ("sync_server_toggle") as InkRowToggleButton;
+
+        var media_dir = store.get_item<string> ("collection_media_dir");
+        var marker = File.new_for_path (Path.build_filename (
+            Path.get_dirname (media_dir), "collection.ranki-no-audio"));
+        var skip_audio = builder.get_object ("skip_audio") as Gtk.CheckButton;
+        skip_audio.active = marker.query_exists ();
+        skip_audio.toggled.connect ((button) => {
+            try {
+                if (button.active) {
+                    if (!marker.query_exists ()) {
+                        marker.create (FileCreateFlags.PRIVATE).close ();
+                    }
+                } else if (marker.query_exists ()) {
+                    marker.delete ();
+                }
+            } catch (Error e) {
+                button.active = marker.query_exists ();
+                warning ("Could not change audio sync setting: %s", e.message);
+            }
+        });
 
         login_button   = builder.get_object ("login_button") as Button;
         

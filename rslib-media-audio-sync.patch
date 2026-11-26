@@ -1,0 +1,362 @@
+diff --git a/rslib/io/src/lib.rs b/rslib/io/src/lib.rs
+index cb44467..439963c 100644
+--- a/rslib/io/src/lib.rs
++++ b/rslib/io/src/lib.rs
+@@ -315,7 +315,7 @@ impl Iterator for ReadDirFiles {
+     fn next(&mut self) -> Option<Self::Item> {
+         let next = self.0.next();
+         if let Some(Ok(entry)) = next.as_ref() {
+-            match entry.metadata().map(|metadata| metadata.is_file()) {
++            match std::fs::symlink_metadata(entry.path()).map(|metadata| metadata.is_file()) {
+                 Ok(true) => next,
+                 Ok(false) => self.next(),
+                 Err(error) => Some(Err(error)),
+diff --git a/rslib/src/sync/media/database/client/changetracker.rs b/rslib/src/sync/media/database/client/changetracker.rs
+index 2d2220c..747d027 100644
+--- a/rslib/src/sync/media/database/client/changetracker.rs
++++ b/rslib/src/sync/media/database/client/changetracker.rs
+@@ -124,7 +124,9 @@ where
+             }
+
+             // ignore large files and zero byte files
+-            let metadata = dentry.metadata()?;
++            // DirEntry::metadata can return EINVAL on the Linux 3.0 kernel
++            // used by older Kindles. Preserve its no-follow semantics.
++            let metadata = std::fs::symlink_metadata(dentry.path())?;
+             if metadata.len() > MAX_INDIVIDUAL_MEDIA_FILE_SIZE as u64 {
+                 continue;
+             }
+diff --git a/rslib/src/sync/media/database/client/mod.rs b/rslib/src/sync/media/database/client/mod.rs
+index f9c6e5e..726a4c7 100644
+--- a/rslib/src/sync/media/database/client/mod.rs
++++ b/rslib/src/sync/media/database/client/mod.rs
+@@ -37,12 +37,16 @@ pub struct MediaDatabaseMetadata {
+
+ pub struct MediaDatabase {
+     db: Connection,
++    skip_audio: bool,
++    pub(crate) non_audio_usn: Usn,
+ }
+
+ impl MediaDatabase {
+     pub(crate) fn new(db_path: &Path) -> error::Result<MediaDatabase> {
+         Ok(MediaDatabase {
+             db: open_or_create(db_path)?,
++            skip_audio: false,
++            non_audio_usn: Usn(0),
+         })
+     }
+
+@@ -140,20 +144,96 @@ delete from media where fname=?",
+         Ok(())
+     }
+
++    /// The skipped set describes server files only; it must never generate a local deletion.
++    pub(crate) fn configure_audio_sync(&mut self, skip_audio: bool) -> error::Result<()> {
++        let has_policy: bool = self.db.query_row(
++            "SELECT EXISTS(SELECT 1 FROM sqlite_master WHERE type='table' AND name='ranki_audio_policy')",
++            [], |row| row.get(0),
++        )?;
++        if !has_policy && !skip_audio {
++            return Ok(());
++        }
++        if skip_audio {
++            use rusqlite::functions::FunctionFlags;
++            self.db.create_scalar_function(
++                "ranki_is_audio",
++                1,
++                FunctionFlags::SQLITE_UTF8 | FunctionFlags::SQLITE_DETERMINISTIC,
++                |ctx| Ok(is_audio_filename(ctx.get_raw(0).as_str()?)),
++            )?;
++        }
++        self.non_audio_usn = self.transact(|ctx| {
++            if !has_policy {
++                ctx.db.execute_batch(
++                    "CREATE TABLE ranki_audio_policy (skipping INTEGER NOT NULL, nonAudioUsn INTEGER NOT NULL);
++                     INSERT INTO ranki_audio_policy VALUES (0, 0)",
++                )?;
++            }
++            let (previous, mut floor): (bool, Usn) = ctx.db.query_row(
++                "SELECT skipping, nonAudioUsn FROM ranki_audio_policy",
++                [],
++                |row| Ok((row.get(0)?, row.get(1)?)),
++            )?;
++            if previous != skip_audio {
++                if skip_audio {
++                    ctx.db.execute_batch("CREATE TABLE ranki_remote_audio (fname TEXT PRIMARY KEY NOT NULL) WITHOUT ROWID")?;
++                } else {
++                    ctx.db.execute_batch("DROP TABLE ranki_remote_audio")?;
++                }
++                // Replay old audio records without reapplying old server images over
++                // pending local edits. Keep the floor if a replay was interrupted.
++                floor = floor.max(ctx.get_meta()?.last_sync_usn);
++                ctx.db.execute("UPDATE ranki_audio_policy SET skipping=?, nonAudioUsn=?", params![skip_audio, floor])?;
++                ctx.db.execute("UPDATE meta SET lastUsn = 0", [])?;
++            }
++            Ok(floor)
++        })?;
++        self.skip_audio = skip_audio;
++        Ok(())
++    }
++
++    pub(crate) fn record_skipped_audio(
++        &self,
++        changes: &[crate::sync::media::changes::MediaChange],
++    ) -> error::Result<()> {
++        if changes.is_empty() {
++            return Ok(());
++        }
++        let mut add = self
++            .db
++            .prepare_cached("INSERT OR IGNORE INTO ranki_remote_audio VALUES (?)")?;
++        let mut delete = self
++            .db
++            .prepare_cached("DELETE FROM ranki_remote_audio WHERE fname = ?")?;
++        for change in changes {
++            if change.sha1.is_empty() {
++                delete.execute([&change.fname])?;
++            } else {
++                add.execute([&change.fname])?;
++            }
++        }
++        Ok(())
++    }
++
+     pub(crate) fn count(&self) -> error::Result<u32> {
++        let query = if self.skip_audio {
++            "SELECT (SELECT count(*) FROM media WHERE csum IS NOT NULL AND NOT ranki_is_audio(fname))
++                  + (SELECT count(*) FROM ranki_remote_audio)"
++        } else {
++            "SELECT count(*) FROM media WHERE csum IS NOT NULL"
++        };
+         self.db
+-            .query_row(
+-                "select count(*) from media where csum is not null",
+-                [],
+-                |row| row.get(0),
+-            )
++            .query_row(query, [], |row| row.get(0))
+             .map_err(Into::into)
+     }
+
+     pub(crate) fn get_pending_uploads(&self, max_entries: u32) -> error::Result<Vec<MediaEntry>> {
+-        let mut stmt = self
+-            .db
+-            .prepare("select fname from media where dirty=1 limit ?")?;
++        let query = if self.skip_audio {
++            "SELECT fname FROM media WHERE dirty=1 AND NOT ranki_is_audio(fname) LIMIT ?"
++        } else {
++            "SELECT fname FROM media WHERE dirty=1 LIMIT ?"
++        };
++        let mut stmt = self.db.prepare(query)?;
+         let results: error::Result<Vec<_>> = stmt
+             .query_and_then(params![max_entries], |row| {
+                 let fname = row.get_ref_unwrap(0).as_str()?;
+@@ -183,6 +263,13 @@ delete from media where fname=?",
+     }
+
+     pub(crate) fn force_resync(&self) -> error::Result<()> {
++        if self.non_audio_usn != Usn(0) {
++            self.db
++                .execute("UPDATE ranki_audio_policy SET nonAudioUsn=0", [])?;
++        }
++        if self.skip_audio {
++            self.db.execute("DELETE FROM ranki_remote_audio", [])?;
++        }
+         self.db
+             .execute_batch("delete from media; update meta set lastUsn = 0, dirMod = 0")
+             .map_err(Into::into)
+@@ -252,6 +339,15 @@ delete from media where fname=?",
+     }
+ }
+
++pub(crate) fn is_audio_filename(name: &str) -> bool {
++    const AUDIO: &[&str] = &[
++        "aac", "aif", "aifc", "aiff", "alac", "amr", "au", "caf", "flac", "m4a", "m4b", "mid",
++        "midi", "mp2", "mp3", "oga", "ogg", "opus", "spx", "wav", "wma",
++    ];
++    name.rsplit_once('.')
++        .is_some_and(|(_, ext)| AUDIO.iter().any(|known| ext.eq_ignore_ascii_case(known)))
++}
++
+ fn row_to_entry(row: &Row) -> rusqlite::Result<MediaEntry> {
+     // map the string checksum into bytes
+     let sha1_str = row.get_ref(1)?.as_str_or_null()?;
+diff --git a/rslib/src/sync/media/syncer.rs b/rslib/src/sync/media/syncer.rs
+index 2732565..29f6b9e 100644
+--- a/rslib/src/sync/media/syncer.rs
++++ b/rslib/src/sync/media/syncer.rs
+@@ -17,6 +17,7 @@ use crate::sync::media::begin::SyncBeginResponse;
+ use crate::sync::media::changes;
+ use crate::sync::media::changes::MediaChangesRequest;
+ use crate::sync::media::database::client::changetracker::ChangeTracker;
++use crate::sync::media::database::client::is_audio_filename;
+ use crate::sync::media::database::client::MediaDatabaseMetadata;
+ use crate::sync::media::database::client::MediaEntry;
+ use crate::sync::media::download;
+@@ -33,18 +34,25 @@ use crate::version;
+
+ pub struct MediaSyncer {
+     mgr: MediaManager,
++    skip_audio: bool,
+     client: HttpSyncClient,
+     progress: ThrottlingProgressHandler<MediaSyncProgress>,
+ }
+
+ impl MediaSyncer {
+     pub fn new(
+-        mgr: MediaManager,
++        mut mgr: MediaManager,
+         progress: ThrottlingProgressHandler<MediaSyncProgress>,
+         client: HttpSyncClient,
+     ) -> Result<MediaSyncer> {
++        let skip_audio = mgr
++            .media_folder
++            .with_extension("ranki-no-audio")
++            .try_exists()?;
++        mgr.db.configure_audio_sync(skip_audio)?;
+         Ok(MediaSyncer {
+             mgr,
++            skip_audio,
+             client,
+             progress,
+         })
+@@ -126,7 +134,7 @@ impl MediaSyncer {
+         loop {
+             debug!(start_usn = ?last_usn, "fetching record batch");
+
+-            let batch = self
++            let mut batch = self
+                 .client
+                 .media_changes(MediaChangesRequest { last_usn }.try_into_sync_request()?)
+                 .await?
+@@ -139,6 +147,19 @@ impl MediaSyncer {
+
+             self.progress.update(false, |p| p.checked += batch.len())?;
+
++            // Only audio needs historical reconciliation when the policy changes.
++            if meta.last_sync_usn < self.mgr.db.non_audio_usn {
++                batch.retain(|change| {
++                    change.usn > self.mgr.db.non_audio_usn || is_audio_filename(&change.fname)
++                });
++            }
++            let (skipped, batch): (Vec<_>, Vec<_>) = if self.skip_audio {
++                batch
++                    .into_iter()
++                    .partition(|change| is_audio_filename(&change.fname))
++            } else {
++                (vec![], batch)
++            };
+             let (to_download, to_delete, to_remove_pending) =
+                 changes::determine_required_changes(&self.mgr.db, batch)?;
+
+@@ -177,6 +198,7 @@ impl MediaSyncer {
+                 ctx.record_clean(&to_remove_pending)?;
+                 ctx.record_removals(&to_delete)?;
+                 ctx.record_additions(downloaded)?;
++                ctx.record_skipped_audio(&skipped)?;
+
+                 // update usn
+                 meta.last_sync_usn = last_usn;
+diff --git a/rslib/src/sync/media/tests.rs b/rslib/src/sync/media/tests.rs
+index 245b75e..7cf9cd2 100644
+--- a/rslib/src/sync/media/tests.rs
++++ b/rslib/src/sync/media/tests.rs
+@@ -165,7 +165,13 @@ impl SyncTestContext {
+     /// observed. Theoretically 1ms should suffice, but I was seeing flaky
+     /// tests on a ZFS system with the delay set to a few milliseconds.
+     fn sleep(&self) {
+-        sleep(Duration::from_millis(10))
++        // Some Kindle storage volumes expose only whole-second timestamps.
++        let modified = self.folder.path().metadata().unwrap().modified().unwrap();
++        if modified.duration_since(std::time::UNIX_EPOCH).unwrap().subsec_nanos() == 0 {
++            sleep(Duration::from_millis(2100));
++        } else {
++            sleep(Duration::from_millis(10));
++        }
+     }
+ }
+
+@@ -217,6 +223,82 @@ async fn media_roundtrip() -> Result<()> {
+     .await
+ }
+
++#[tokio::test]
++async fn ranki_audio_policy_preserves_cloud_media_and_backfills_on_disable() -> Result<()> {
++    with_active_server(|client| async move {
++        let ctx = SyncTestContext::new(client.clone());
++        let desktop = ctx.media1();
++        let kindle = ctx.media2();
++        let marker = kindle.media_folder.with_extension("ranki-no-audio");
++        // A real audio file downloaded before the setting was enabled.
++        desktop.add_file("cached.mp3", b"old recording")?;
++        desktop.add_file("local.jpg", b"original image")?;
++        desktop.add_file("deleted.png", b"delete me")?;
++        ctx.sync_media1().await?;
++        ctx.sync_media2().await?;
++        kindle.remove_files(&["local.jpg"])?;
++        kindle.add_file("local.jpg", b"edited before enabling")?;
++        fs::write(&marker, b"")?;
++
++        desktop.add_file("remote.MP3", b"recording")?;
++        desktop.add_file("obsolete.ogg", b"other recording")?;
++        desktop.add_file("picture.png", b"first image")?;
++        ctx.sync_media1().await?;
++        ctx.sync_media2().await?;
++        ctx.sync_media1().await?;
++        assert_eq!(
++            fs::read(desktop.media_folder.join("local.jpg"))?,
++            b"edited before enabling"
++        );
++        assert!(!kindle.media_folder.join("remote.MP3").exists());
++        assert!(!kindle.media_folder.join("obsolete.ogg").exists());
++        assert_eq!(
++            fs::read(kindle.media_folder.join("picture.png"))?,
++            b"first image"
++        );
++        assert_eq!(
++            fs::read(kindle.media_folder.join("cached.mp3"))?,
++            b"old recording"
++        );
++
++        desktop.remove_files(&["obsolete.ogg".to_string()])?;
++        desktop.remove_files(&["remote.MP3".to_string()])?;
++        desktop.add_file("remote.MP3", b"new recording")?;
++        kindle.remove_files(&["cached.mp3".to_string()])?;
++        kindle.add_file("edited.jpg", b"kindle image")?;
++        ctx.sync_media1().await?;
++        ctx.sync_media2().await?;
++        ctx.sync_media1().await?;
++        assert_eq!(
++            fs::read(desktop.media_folder.join("cached.mp3"))?,
++            b"old recording"
++        );
++        assert_eq!(
++            fs::read(desktop.media_folder.join("edited.jpg"))?,
++            b"kindle image"
++        );
++
++        // No new server changes: disabling still has to fetch skipped files.
++        kindle.remove_files(&["deleted.png"])?;
++        fs::remove_file(marker)?;
++        ctx.sync_media2().await?;
++        assert_eq!(
++            fs::read(kindle.media_folder.join("remote.MP3"))?,
++            b"new recording"
++        );
++        assert_eq!(
++            fs::read(kindle.media_folder.join("cached.mp3"))?,
++            b"old recording"
++        );
++        assert!(!kindle.media_folder.join("obsolete.ogg").exists());
++        ctx.sync_media1().await?;
++        assert!(!desktop.media_folder.join("deleted.png").exists());
++        ctx.sync_media2().await?;
++        Ok(())
++    })
++    .await
++}
++
+ #[tokio::test]
+ async fn parallel_requests() -> Result<()> {
+     with_active_server(|client| async move {

@@ -39,8 +39,9 @@ It talks to the actual backend.
 
 ## Important Warnings
 
-- Sync will download **all media** linked to your decks to your Kindle storage.  
-  If your collection has large images/audio, check your media size first.
+Ranki syncs all media by default. On a Kindle where you only need the pictures, open **Settings** and enable **Skip audio during media sync** before the next sync. Images and other non-audio files continue to sync in both directions. Ranki recognizes audio by filename extension regardless of case, including MP3, OGG, OPUS, WAV, FLAC, AAC, and M4A.
+
+While enabled, audio changes stay on their originating device. Existing audio files remain on the Kindle, and skipping a download leaves the server copy available to your other devices. Turn the setting off and sync to fetch skipped audio. Changing the setting rereads media filenames and checksums once.
 
 Data is stored at: `/mnt/us/anki_data`
 
@@ -60,6 +61,18 @@ Launch via KUAL and/or copy the shortcut (`shortcut_ranki.sh`) to `/mnt/us/docum
 - Uses **WebKitGTK**
 - Communicates with the Anki backend using **protobuf**
 - Backend version pinned to **26.09.4**
+
+---
+
+### Building the media-sync option
+
+Apply the audio patch to the pinned Anki checkout along with Ranki's backend patches:
+
+```sh
+git -C anki apply ../rslib-media-audio-sync.patch
+```
+
+The media integration tests use temporary collections and a local sync server. With the Anki build prerequisites in place, run `cargo test --locked -p anki --lib sync::media::` in the `anki` directory.
 
 ---
 
